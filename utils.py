@@ -1,14 +1,9 @@
 import math
-import os
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from torchvision import datasets, transforms
 from torch.utils.tensorboard import SummaryWriter
-
 
 writer = SummaryWriter(log_dir="./logs/")
 
