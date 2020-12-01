@@ -1,15 +1,10 @@
 import logging
 
-import numpy as np
 import torch
-import torch.nn.functional as F
-import torch.optim as optim
 from torch.autograd import Variable
-from torchvision import datasets, transforms
 
 import adversary as adv
-import baseline
-from dataloader import DataLoader
+from dataloader import DataDistributor
 from options import ARGS
 from utils import CUDA, calc_accuracy, writer
 from worker import Role, Worker
@@ -18,11 +13,13 @@ from worker import Role, Worker
 ARGS.num_v_workers_sim = ARGS.num_workers_sim - ARGS.num_b_workers_sim
 ARGS.cuda = not ARGS.no_cuda and torch.cuda.is_available()
 ARGS.alpha = 0.5
-devices = [torch.device("cuda:1")]
 ARGS.truncated_bptt_step = 5
-dataloader = DataLoader(ARGS.dataset_path, ARGS.dataset, ARGS.batch_size)
-train_loader = dataloader.train_loader
-test_loader = dataloader.test_loader
+data_distributor = DataDistributor(
+    ARGS.dataset_path, ARGS.dataset, ARGS.batch_size, ARGS.num_workers_sim
+)
+data_distributor.distribute()
+train_loaders = data_distributor.train_loaders
+test_loader = data_distributor.test_loader
 attack_method = adv.attack_methods[ARGS.attack_method]().attack
 
 
@@ -32,7 +29,7 @@ def GAA():
         None,
         None,
         neighbors_n=ARGS.num_workers_sim,
-        train_loader=train_loader,
+        train_loader=train_loaders[0],
         test_loader=test_loader,
         meta_lr=1e-2,
         policy_lr=1e-2,
@@ -53,7 +50,7 @@ def GAA():
             atk_fn=attack_method if byzantine else None,
             adv_loss=ARGS.adv_loss if byzantine else None,
             neighbors_n=ARGS.num_workers_sim,
-            train_loader=train_loader,
+            train_loader=train_loaders[i],
             test_loader=test_loader,
             meta_lr=1e-2,
             policy_lr=1e-2,

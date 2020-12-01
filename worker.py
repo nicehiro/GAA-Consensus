@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.autograd import Variable, grad
+from torch.autograd import Variable
 
 from adv_loss import adv_losses
 from models.cifar10 import Cifar10
@@ -31,8 +31,8 @@ class Worker:
         atk_fn,
         adv_loss,
         neighbors_n,
-        train_loader: torch.utils.data.DataLoader,
-        test_loader: torch.utils.data.DataLoader,
+        train_loader,
+        test_loader,
         meta_lr=1e-2,
         policy_lr=1e-2,
         dataset="MNIST",
@@ -59,9 +59,7 @@ class Worker:
         self.extreme_mail = extreme_mail
         self.pretense = pretense
         self.train_loader = train_loader
-        self.train_iter = iter(self.train_loader)
         self.test_loader = test_loader
-        self.test_iter = iter(self.test_loader)
         self.val_x, self.val_y = self._generate_val_set()
         self.meta_model = CUDA(self.meta_models[dataset]())
         self.meta_model_copy = CUDA(self.meta_models[dataset]())
@@ -99,12 +97,12 @@ class Worker:
                 _queue.append(module)
 
     def _generate_val_set(self):
-        val_x, val_y = self.train_iter.next()
+        val_x, val_y = self.train_loader.val_set()
         val_x, val_y = CUDA(val_x), CUDA(val_y)
         return val_x, val_y
 
     def submit(self, iter_no=0):
-        x, y = self.train_iter.next()
+        x, y = self.train_loader.next()
         x, y = Variable(x), Variable(y)
         x, y = CUDA(x), CUDA(y)
         if self.role is Role.NORMAL:
