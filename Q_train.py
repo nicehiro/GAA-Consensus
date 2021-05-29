@@ -1,4 +1,6 @@
 import logging
+import random
+import math
 
 import torch
 from torch.autograd import Variable
@@ -15,7 +17,7 @@ ARGS.cuda = not ARGS.no_cuda and torch.cuda.is_available()
 ARGS.alpha = 0.5
 ARGS.truncated_bptt_step = 5
 data_distributor = DataDistributor(
-    ARGS.dataset_path, ARGS.dataset, ARGS.batch_size, ARGS.num_workers_sim
+    ARGS.dataset_path, ARGS.dataset, ARGS.batch_size, ARGS.num_workers_sim + 1
 )
 data_distributor.distribute()
 train_loaders = data_distributor.train_loaders
@@ -29,7 +31,7 @@ def GAA():
         None,
         None,
         neighbors_n=ARGS.num_workers_sim,
-        train_loader=train_loaders[0],
+        train_loader=train_loaders[ARGS.num_workers_sim],
         test_loader=test_loader,
         meta_lr=1e-2,
         policy_lr=1e-2,
@@ -66,14 +68,22 @@ def GAA():
 
     alpha_iter_no = 0
 
+    # Q-C settings
+    QC = {}
+    weights = []
+    rewards = {}
+    step_size = 0.1
+    for worker in workers:
+        rewards[worker.wid] = 0
+        QC[worker.wid] = 1
+        weights.append(1 / ARGS.num_workers_sim)
+
     for i in range(ARGS.max_iter):
         test_accuracy = calc_accuracy(master.meta_model, test_loader)
         writer.add_scalar("data/test_accuracy", test_accuracy, alpha_iter_no)
 
         inner_step_count = ARGS.optimizer_steps // ARGS.truncated_bptt_step
         for k in range(inner_step_count):
-            loss_sum = 0
-            prev_loss = CUDA(torch.zeros(1))
             master.reset()
             for t in range(ARGS.truncated_bptt_step):
                 alpha_iter_no += 1
@@ -83,14 +93,44 @@ def GAA():
                     worker.copy_meta_params_from(master.meta_model)
                     # receive submitted gradients Q_t
                     Q.append(worker.submit(alpha_iter_no))
-                # update alpha
-                loss = master.alpha_update(Q)
+                # update alpha using Q-Consensus
+                # loss = master.alpha_update(Q)
+                # calc rewards
+                server_gradient = master.submit(alpha_iter_no)
+                for worker in workers:
+                    for i in range(100):
+                        index = random.randint(0, server_gradient.shape[0] - 1)
+                        reward = math.exp(
+                            -abs(Q[worker.wid][index][0] - server_gradient[index][0])
+                            * 100
+                            * (10 + 0.1 * t + k * ARGS.truncated_bptt_step)
+                        )
+                        rewards[worker.wid] += reward
+                    rewards[worker.wid] *= weights[worker.wid]
+                rewards_sum = sum(rewards.values())
+                # calc weights
+                for worker in workers:
+                    rewards[worker.wid] = rewards[worker.wid] / rewards_sum
+                    # if k > 0.8 * episodes_num:
+                    #     step_size -= step_size / (episodes_num * 0.2)
+                    QC[worker.wid] += max(step_size, 0) * (
+                        rewards[worker.wid] - QC[worker.wid]
+                    )
+                    Q_sum = sum(QC.values())
+                    for tt in range(ARGS.num_workers_sim):
+                        weights[tt] = (QC[tt] / Q_sum) + 0.00001
+                    weights_sum = sum(weights)
+                    for tt in range(ARGS.num_workers_sim):
+                        weights[tt] = (
+                            weights[tt]
+                            / weights_sum
+                            * (1 - 1 / (ARGS.num_workers_sim + 1))
+                        )
+                # set weights
+                master.alpha = CUDA(Variable(torch.tensor(weights)))
                 # update GAR \theta using GAR
                 master.meta_update(Q)
-                # calc l_{GAA}
-                if t > 0:
-                    loss_sum += loss - Variable(prev_loss)
-                prev_loss = loss.data
+
                 writer.add_scalars(
                     "data/alpha",
                     {
@@ -99,8 +139,6 @@ def GAA():
                     },
                     alpha_iter_no,
                 )
-            # update policy model
-            master.policy_update(loss_sum)
             # test accuracy
             if alpha_iter_no % 100 == 0:
                 test_acc = calc_accuracy(master.meta_model, master.test_loader)

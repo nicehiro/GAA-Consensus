@@ -52,7 +52,7 @@ class Worker:
             torch.tensor([1.0 / neighbors_n for _ in range(neighbors_n)]),
             requires_grad=True,
         )
-        self.alpha = self.alpha.cuda()
+        self.alpha = CUDA(self.alpha)
         self.dim = 0
         self.adv_loss = adv_loss
         self.missing_labels = missing_labels
@@ -76,7 +76,7 @@ class Worker:
         When calc meta loss, will generate grads in params, but not be used.
         So when calc policy loss, will get error.
         """
-        self.reset_meta_model()
+        # self.reset_meta_model()
         self.copy_meta_params_to(self.meta_model_copy)
         self.copy_meta_params_from(self.meta_model_copy)
         self.alpha = CUDA(Variable(self.alpha.data))
@@ -151,7 +151,7 @@ class Worker:
         grads = adv_losses[self.adv_loss](self.meta_model, loss1, loss2, iter_no)
         return grads
 
-    def meta_update(self, Q, loss):
+    def meta_update(self, Q):
         """
         Only for server update meta model.
 
@@ -162,7 +162,7 @@ class Worker:
         # update meta network using linear GAR
         for i in range(len(Q)):
             flat_params = flat_params - self.meta_lr * (
-                CUDA(self.alpha[i]) * Q[i].cuda()
+                CUDA(self.alpha[i]) * CUDA(Q[i])
             )
         self.set_meta_model_flat_params(flat_params)
 
@@ -238,6 +238,7 @@ class Worker:
                 cur._parameters["weight"] = flat_params[
                     offset : offset + weight_flat_size
                 ].view(*weight_shape)
+                cur._parameters["weight"].grad = torch.zeros(*weight_shape)
             if "bias" in cur._parameters and not (cur._parameters["bias"] is None):
                 bias_shape = cur._parameters["bias"].size()
                 bias_flat_size = reduce(mul, bias_shape, 1)
@@ -247,6 +248,7 @@ class Worker:
                     + weight_flat_size
                     + bias_flat_size
                 ].view(*bias_shape)
+                cur._parameters["bias"].grad = torch.zeros(*bias_shape)
             offset += weight_flat_size + bias_flat_size
             for module in cur.children():
                 _queue.append(module)
