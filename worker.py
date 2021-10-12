@@ -235,20 +235,20 @@ class Worker:
             if "weight" in cur._parameters:
                 weight_shape = cur._parameters["weight"].size()
                 weight_flat_size = reduce(mul, weight_shape, 1)
-                cur._parameters["weight"] = flat_params[
+                cur._parameters["weight"].data = flat_params[
                     offset : offset + weight_flat_size
                 ].view(*weight_shape)
-                cur._parameters["weight"].grad = torch.zeros(*weight_shape)
+                # cur._parameters["weight"].grad = torch.zeros(*weight_shape)
             if "bias" in cur._parameters and not (cur._parameters["bias"] is None):
                 bias_shape = cur._parameters["bias"].size()
                 bias_flat_size = reduce(mul, bias_shape, 1)
-                cur._parameters["bias"] = flat_params[
+                cur._parameters["bias"].data = flat_params[
                     offset
                     + weight_flat_size : offset
                     + weight_flat_size
                     + bias_flat_size
                 ].view(*bias_shape)
-                cur._parameters["bias"].grad = torch.zeros(*bias_shape)
+                # cur._parameters["bias"].grad = torch.zeros(*bias_shape)
             offset += weight_flat_size + bias_flat_size
             for module in cur.children():
                 _queue.append(module)
