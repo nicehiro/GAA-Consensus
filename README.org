@@ -1,0 +1,11 @@
+Source code of paper: Credibility assessment based byzantine-resilient decentralized learning.
+
+#+begin_quote
+@article{hou2022credibility,
+  title={Credibility assessment based byzantine-resilient decentralized learning},
+  author={Hou, Jian and Wang, Fangyuan and Wei, Chunling and Huang, Hongyun and Hu, Yong and Gui, Ning},
+  journal={IEEE transactions on dependable and secure computing},
+  year={2022},
+  publisher={IEEE}
+}
+#+end_quote
